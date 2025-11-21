@@ -1,290 +1,148 @@
-class _CycleData(object):
-    def __init__(self):
-        for keys in ["capacity", "voltage", "time", "summary_capacity"]:
-            self.__dict__.update([(keys, [])])
+class BiologicData(object):
+    def __init__(self, filename):
+        
+        import re
+        import pandas as pd
+        import numpy as np
+               
+        data_read = []
 
-class BiologicGalv(object):
-    """
-    Class for loading and displaying Galvanostatic data from Biologic cyclers
-    Requires mpt_to_df.py in same directory
-    
-    Inputs
-    ----------
-    filename (str):
-        The .mpt file (including its path)
+        with open(filename) as f:
+            for line in f.readlines():
+                if "Nb header lines" in line:
+                    header_lines = int(re.findall("\d+", line)[0])
+                data_read.append(line.strip("\n").split("\t"))
+                
+        header_labels = data_read[header_lines-1]
+        self._df = pd.DataFrame(np.array(data_read[header_lines:], dtype=float), columns=header_labels[:-1])
+        self.number_cycles = int(self._df["cycle number"].max())
         
-    mass (float OR "ignore") (optional, default=None):
-        Mass of active material in g (if entering in mg, set scale_mass to True)
-        If mass == None, mass is read from header of Biologic .mpt file (if available, otherwise set to 1)
-        If mass == "ignore", mass is set to 1
-        Where mass is not set (i.e. mass defaults to '1'), graph outputs will be shown in mAh
-        Where mass is set, graph outputs will be shown in mAh/g
+        class _Cycle(object):
+            def __init__(cycle_self):
+                cycle_self_keys = ["capacity", "voltage", "summary_capacity"]
+                cycle_self.__dict__.update([(keys, []) for keys in cycle_self_keys])
+            
+        cycle_types = {"charge": 1,
+                       "discharge": 0}
         
-    theoretical_capacity (float) (default=1675):
-        The theoretical capacity of the cell in mAh/g
+        data_types = {"capacity": "Capacity/mA.h",
+                      "voltage": "Ecell/V", 
+                      }
         
-    rate_change (bool) (optional, default=False):
-        If multiple CRates are present in the cycling (e.g. 0.1, 0.2, 0.5...), splits the data into different CRates and enables attributes for labels in plotting
-    
-    resume_label (str) (optional, default = " "):
-        For use with rate change data with repeated CRate, e.g. (0.1, 0.2, 0.5, 0.1). Resume label will be appended to repeated CRates for unique dictionary keys
-        
-    truncate_at (int) (optional, default=None):
-        Last cycle to include in the data (e.g. to avoid final failed cycle affecting capacities)
-        
-    scale_mass (bool) (optional, default=False):
-        mass argument entered in g by default. To scale to mg, enter scale_mass=True
+        for cycle_type in cycle_types.keys():
+            setattr(self, cycle_type, _Cycle()) 
         
         
-    Attributes
-    ----------
-    n_cycles (int): 
-        Number of cycles for which discharge and charge data is available
+        for ncyc in range(self.number_cycles):
+            cycle_df = self._df.loc[(self._df["cycle number"]==ncyc) & (abs(self._df["I/mA"])>0)]
+            
+            for cycle_keys, cycle_values in cycle_types.items():
+                cycle_capacity = cycle_df.loc[cycle_df["ox/red"]==cycle_values][data_types["capacity"]]
+                vars(self)[cycle_keys].capacity.append(cycle_capacity-cycle_capacity.min())
+                
+                vars(self)[cycle_keys].voltage.append(cycle_df.loc[cycle_df["ox/red"]==cycle_values][data_types["voltage"]])           
+                
+                vars(self)[cycle_keys].summary_capacity.append(max(vars(self)[cycle_keys].capacity[-1]))
+                
+    def save_to_excel(self, save_file_name):
         
-    mass (float):
-        Mass (in g) used to calculate gravimetric capacity 
-    
-    charge AND discharge (_CycleData objects):
-        ┣ capacity: array of arrays of capacity data (one array per cycle)
-        ┃           units: mAh/g (if mass set) or mAh (if mass not set)
-        ┣ voltage: array of arrays of voltage data (one array per cycle)
-        ┣ time: array of arrays of times for data collection after onset of cycling (cumulative)
-        ┃           units: seconds (cumulative)
-        └ summary_capacity: final capacity at the end of the cycle
-                            units: mAh/g (if mass set) or mAh (if mass not set)
-                            
-    Methods
-    ----------
-    plot_capacities(y_max=1675):
-        Plots the summary_capacity data as a function of cycle number
+        import numpy as np
+        import pandas as pd
+        import os
         
-    plot_capacity_voltage(cycles_to_plot="all", formation_cycles=2)
-        Plots the discharge/ charge curves for the specified cycles
-    """
-    def __init__(self, filename, mass=None, theoretical_capacity=1675, rate_change=False, resume_label = " ", truncate_at=None, scale_mass=False):
-        from mpt_to_df import mpt_to_df
+        if save_file_name[-5:] != ".xlsx" :
+            save_file_name += ".xlsx"
+        
+        max_cycle_length = max([max([len(data) for data in vars(self)[cycle_keys].capacity]) for cycle_keys in ["discharge", "charge"]])
+
+        data_arrs = dict([(cycle_type, np.full((max_cycle_length, 2*self.number_cycles), np.nan))
+                          for cycle_type in ["discharge", "charge"]])
+
+        for cycle_type in ["discharge", "charge"]:
+            for ncyc in range(self.number_cycles):
+                data_arrs[cycle_type][:len(vars(self)[cycle_type].capacity[ncyc]), 2*ncyc] = vars(self)[cycle_type].capacity[ncyc]
+                data_arrs[cycle_type][:len(vars(self)[cycle_type].voltage[ncyc]), 2*ncyc+1] = vars(self)[cycle_type].voltage[ncyc]
+                
+        column_headers = [item for sublist in [["capacity{}".format(n),
+                                                  "voltage{}".format(n)] for n in range(self.number_cycles)] for item in sublist]
+        
+        discharge_df = pd.DataFrame(data_arrs["discharge"], columns=column_headers)
+        charge_df = pd.DataFrame(data_arrs["charge"], columns=column_headers)
+        
+        summary_capacity_df = pd.DataFrame({"Cycle number": np.arange(self.number_cycles), 
+              "Discharge capacity": self.discharge.summary_capacity,
+              "Charge capacity": self.charge.summary_capacity})
+        
+        print("Writing discharge data")
+        
+        if os.path.isfile(save_file_name):
+            with pd.ExcelWriter(save_file_name, engine='openpyxl', mode="a", if_sheet_exists="replace") as writer:
+                discharge_df.to_excel(writer,
+                                sheet_name="discharge",
+                                index=False)
+        else:
+            with pd.ExcelWriter(save_file_name, engine='openpyxl') as writer:
+                discharge_df.to_excel(writer,
+                                sheet_name="discharge",
+                                index=False)
+            
+        print("Writing charge data")
+        with pd.ExcelWriter(save_file_name, engine='openpyxl', mode="a", if_sheet_exists="replace") as writer:
+            charge_df.to_excel(writer,
+                                    sheet_name="charge",
+                                    index=False)
+            
+        print("Writing summary capacity data")
+        with pd.ExcelWriter(save_file_name, engine='openpyxl', mode="a", if_sheet_exists="replace") as writer:
+            summary_capacity_df.to_excel(writer,
+                                 sheet_name="summary_capacity",
+                                 index=False)
+            
+    def plot_summary_capacity(self):
+        
         import matplotlib.pyplot as plt
         import numpy as np
-        import re
-        
-        import warnings
-        warnings.filterwarnings(action="ignore", category=DeprecationWarning)
-        
-        self._updated = "03.01.2024"
-        self._update_record = ["25.08.2023: Prints cycle where import processing failed rather than terminating and failing",
-                                "06.09.2023: if Battery capacity not present in .mpt, sets mass=1 by default rather than terminating and failing",
-                              "07.10.2023: Added 'scale mass' boolean argument. If True, capacity is divided by 1.675; if False (default), capacity is divided by 1675. Where True, assumes capacity provided in mAh (i.e. mass returned in mg)",
-                              "20.12.2023: added try/ except on mpt_to_df load - function updated separately to cope with empty data files without terminating cell progress",
-                               "03.01.2024: Added _filename attribute for ease of tracking channel status when iterating over BiologicGalv objects"]
-        
-        
         plt.rcParams.update({"xtick.direction": "in"})
         plt.rcParams.update({"ytick.direction": "in"})
         plt.rcParams.update({"xtick.top": True})
         plt.rcParams.update({"ytick.right": True})
         
-        try:
-            self._data_file = mpt_to_df(filename)
-        except:
-            if type(self._data_file) == None:
-                return
-            
-        self._filename = filename
-        
-        if mass == None:
-            try:            
-                self._mass_set = False
-                with open(filename) as f:
-                    for line in f.readlines():
-                        if "Battery capacity" in line:
-                            capacity_read = float(re.findall("\d+.\d+", line)[0])
-                            if scale_mass == False:
-                                self.mass = capacity_read/theoretical_capacity
-                            else:
-                                self.mass = capacity_read/(theoretical_capacity/1000)
-                            self._mass_set = True
-                if self._mass_set == False:
-                    self.mass = 1
-            except:
-                self.mass = 1
-                self._mass_set = False
-        elif mass == "ignore":
-            self.mass = 1
-            self._mass_set = False
-        else:
-            self.mass = mass
-            self._mass_set = True
-            
-        if "I/mA" in self._data_file.columns:
-            current_header = "I/mA"
-        elif "<I>/mA" in self._data_file.columns:
-            current_header = "<I>/mA"
-            
-        if "Ecell/V" in self._data_file.columns:
-            voltage_header = "Ecell/V"
-        elif "Ewe/V" in self._data_file.columns:
-            voltage_header = "Ewe/V"
-            
-        current = np.array(self._data_file[current_header])
-        capacity = np.array(self._data_file["Capacity/mA.h"])/self.mass
-        voltage = np.array(self._data_file[voltage_header])
-        time = np.array(self._data_file["time/s"])
-        
-        charge_idx = np.argwhere(np.sign(current)==1).flatten()
-        discharge_idx = np.argwhere(np.sign(current)==-1).flatten()
-        
-        self._charge_end_idx = charge_idx[np.argwhere(charge_idx[1:]-charge_idx[:-1]!=1).flatten()]
-        self._discharge_end_idx = discharge_idx[np.argwhere(discharge_idx[1:]-discharge_idx[:-1]!=1).flatten()]
-        
-        if max(self._discharge_end_idx) > max(self._charge_end_idx):
-            last_cycle = "discharge"
-        else:
-            last_cycle = "charge"
-            
-        self.n_cycles = np.min([self._discharge_end_idx.shape[0],
-                                self._charge_end_idx.shape[0]])
-            
-        self._charge_end_idx = np.array(np.hstack((np.zeros(1), self._charge_end_idx)), dtype=int)
-        self.discharge = _CycleData()
-        self.charge = _CycleData()
-        
-        ### Truncate at added 25.03.2023
-        if truncate_at != None:
-            stop_at = truncate_at
-        else:
-            stop_at = self.n_cycles
-        
-        for cyc in range(stop_at):
-            if cyc < self._charge_end_idx.shape[0] and cyc < self._discharge_end_idx.shape[0]:
-                try:
-                    self.discharge.capacity.append(capacity[self._charge_end_idx[cyc]+1: self._discharge_end_idx[cyc]])
-                    self.discharge.voltage.append(voltage[self._charge_end_idx[cyc]+1: self._discharge_end_idx[cyc]])
-                    self.discharge.time.append(time[self._charge_end_idx[cyc]+1: self._discharge_end_idx[cyc]])
-                    self.discharge.summary_capacity.append(np.max(capacity[self._charge_end_idx[cyc]+1: self._discharge_end_idx[cyc]]))
-                except:
-                    print("Failed at discharge {}".format(cyc))
-                    
-            if cyc < self._charge_end_idx.shape[0]-1 and cyc < self._discharge_end_idx.shape[0]:
-                try:
-                    self.charge.voltage.append(voltage[self._discharge_end_idx[cyc]+1: self._charge_end_idx[cyc+1]])
-                    self.charge.capacity.append(capacity[self._discharge_end_idx[cyc]+1: self._charge_end_idx[cyc+1]])
-                    self.charge.time.append(time[self._discharge_end_idx[cyc]+1: self._charge_end_idx[cyc+1]])
-                    self.charge.summary_capacity.append(np.max(capacity[self._discharge_end_idx[cyc]+1: self._charge_end_idx[cyc+1]]))
-                except:
-                    print("Failed at charge {}".format(cyc))
-                
-                
-        for cycle_type in ["discharge", "charge"]:
-            for varname in vars(vars(self)[cycle_type]).keys():
-                if "capacity" in varname:
-                    vars(vars(self)[cycle_type])[varname] = np.array(vars(vars(self)[cycle_type])[varname], dtype=object)
-                else:
-                    vars(vars(self)[cycle_type])[varname] = np.array(vars(vars(self)[cycle_type])[varname], dtype=object)
-        
-        if rate_change==True:
-            data_read = []
-            import re
-
-#             filename = 'CellData\\155_c60s40\\rate_change\\LRB_155_60C_40S_cell1_CO3.mpt'
-            with open(filename) as f:
-                for nline, line in enumerate(f.readlines()):
-                    data_read.append(line)
-
-            for nline, line in enumerate(data_read): 
-                if "ctrl_type" in line:
-                    ctrl_type = [seg for seg in line.split(" ") if len(seg)>0][1:-1]
-                if "ctrl1_val " in line:
-                    n_repeats = [re.findall("\d+.\d+", seg)[0] for seg in data_read[nline].split(" ") if len(re.findall("\d+.\d+", seg))>0]
-                if "ctrl3_val_vs" in line:
-                    CRates_read = [re.findall("\d+.\d+", seg)[0] for seg in data_read[nline+1].split(" ") if len(re.findall("\d+.\d+", seg))>0]
-
-            CRates_ordered = [CRates_read[nname][:CRates_read[nname].index(".")] for nname, name in enumerate(ctrl_type) if ctrl_type[nname-1]!="CC" and name!="Rest"]        
-            for nname, name in enumerate(CRates_ordered):
-                if name in (CRates_ordered[:nname]):
-                    CRates_ordered[nname] = "{}{}".format(name, resume_label)
-
-            n_repeats = [n_repeats[nname] for nname, name in enumerate(ctrl_type) if ctrl_type[nname-1]!="CC" and name!="Rest"]
-
-            self.CRates_cycles = dict([(CRates_ordered[n], int(float(n_repeats[n]))) for n in range(len(n_repeats))])
-            self.CRate_change_cycles = [int(np.sum([*self.CRates_cycles.values()][:n])+n) for n in range(len(self.CRates_cycles)+1)]
-            
-    def plot_capacities(self, y_max=1675):
-        """
-        Plots the discharge and charge capacities as a function of cycle number
-        
-        Inputs
-        ----------
-        y_max (float) (optional, default=1675):
-            the upper y limit of the plot
-            
-        Returns
-        ----------
-        fig, ax (figure, subplots):
-            Enables control of properties after plotting
-            Example:
-            f, ax = self.plot_capacities()
-            ax.legend(loc="upper left")
-            
-        """
-        import matplotlib.pyplot as plt
-        import numpy as np
-        f, ax = plt.subplots()
-        ax.plot(self.discharge.summary_capacity, "o", mfc="k", mec="k", label="Discharge")
-        ax.plot(self.charge.summary_capacity, "o", mec="k", mfc="none", label="Charge")
-        ax.legend()
-        ax.set_ylim([0, y_max])
+        fig, ax = plt.subplots()
+        ax.plot(self.discharge.summary_capacity, "o")
+        ax.set_ylim([0, None])
         ax.set_xlabel("Cycle number")
-        if self._mass_set == True:
-            ax.set_ylabel("Gravimetric capacity (mAh/g)")
-        else:
-            ax.set_ylabel("Capacity (mAh)")
-        return f, ax
-            
-    def plot_capacity_voltage(self, cycles_to_plot="all", formation_cycles=2):
-        """
-        Plots charge/ discharge curves for specified cycles, differentiated by colour
-
-        Inputs
-        ----------
-        cycles_to_plot : (str or list of integers) (optional, default="all")
-            If "all", plots all the available data
-            If list of integers (e.g. [0, 1, 10, 20, 30...]) plots the specified cycles if available
-        formation_cycles : (int) (optional, default=2)
-            If slow formation cycles are used, shows these curves as dotted lines
-            Set to 0 if no formation cycles are used. 
-
-        Returns
-        ----------
-        fig, ax (figure, subplots):
-            Enables control of properties after plotting
-            Example:
-            f, ax = self.plot_capacities()
-            ax.legend(loc="upper left")
-
-        """
+        ax.set_ylabel("Capacity (mAh)")
+        
+        return fig, ax
+    
+    def plot_capacity_voltage(self, cycle_interval=None):
         import matplotlib.pyplot as plt
         import numpy as np
-        f, ax = plt.subplots()
+        plt.rcParams.update({"xtick.direction": "in"})
+        plt.rcParams.update({"ytick.direction": "in"})
+        plt.rcParams.update({"xtick.top": True})
+        plt.rcParams.update({"ytick.right": True})
         
-        if cycles_to_plot == "all":
-            cycles_to_plot = range(self.n_cycles)
+        
+        if type(cycle_interval) == type(None):
+            cycles_to_plot = np.arange(0, self.number_cycles)
         else:
-            cycles_to_plot = np.array(cycles_to_plot)-1
+            cycles_to_plot = np.arange(0, self.number_cycles, cycle_interval, dtype=int)
+            
+        fig, ax = plt.subplots()
+
+        for cyc in cycles_to_plot:    
+            d, = ax.plot(self.discharge.capacity[cyc],
+                    self.discharge.voltage[cyc], label=cyc)
+            c = ax.plot(self.charge.capacity[cyc],
+                    self.charge.voltage[cyc], color=d.get_color())
+
+        ax.legend(title="Cycle number", loc="center left", bbox_to_anchor=(1, 0.5))
+        ax.set_ylabel("Voltage vs. Li/ Li$^{+}$ (V)")
+        ax.set_xlabel("Capacity (mAh)")
+        ax.set_xlim([0, None])
+        plt.tight_layout()
         
-        color_map = [plt.cm.viridis(i) for i in np.linspace(0, 1, len(cycles_to_plot)-formation_cycles)]
-        
-        for ncyc, cyc in enumerate(cycles_to_plot):
-            if cyc < formation_cycles:
-                d, = ax.plot(self.discharge.capacity[cyc], self.discharge.voltage[cyc], ls=":", label=cyc+1, color="gray")
-                c, = ax.plot(self.charge.capacity[cyc], self.charge.voltage[cyc], ls=":", color=d.get_color())
-            else:
-                d, = ax.plot(self.discharge.capacity[cyc], self.discharge.voltage[cyc], label=cyc+1, color=color_map[ncyc-formation_cycles])
-                c, = ax.plot(self.charge.capacity[cyc], self.charge.voltage[cyc], color=d.get_color())
-        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-        if self._mass_set == True:
-            ax.set_xlabel("Gravimetric capacity (mAh/g)")
-        else:
-            ax.set_xlabel("Capacity (mAh)")
-        ax.set_ylabel("Voltage vs. Li/ Li$^{+}$(V)")
-        return f, ax
-        
+        return fig, ax
+            
+    
