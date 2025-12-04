@@ -8,7 +8,7 @@ class BiologicData(object):
         data_read = []
         
         self.version = "2.0.1"
-        self._change_log = ["2.0.1    251204    added self._current_column and self._voltage_column for outputs from EC lab vs BT lab"]
+        self._change_log = ["2.0.1    251204    added self._current_column and self._voltage_column for outputs from EC lab vs BT lab, added np.nan for empty cycles"]
 
         with open(filename) as f:
             for line in f.readlines():
@@ -55,8 +55,10 @@ class BiologicData(object):
                 vars(self)[cycle_keys].capacity.append(cycle_capacity-cycle_capacity.min())
                 
                 vars(self)[cycle_keys].voltage.append(cycle_df.loc[cycle_df["ox/red"]==cycle_values][data_types["voltage"]])           
-                
-                vars(self)[cycle_keys].summary_capacity.append(max(vars(self)[cycle_keys].capacity[-1]))
+                if len(vars(self)[cycle_keys].capacity[-1]) > 0:
+                    vars(self)[cycle_keys].summary_capacity.append(max(vars(self)[cycle_keys].capacity[-1]))
+                else:
+                    vars(self)[cycle_keys].summary_capacity.append(np.nan)
                 
     def save_to_excel(self, save_file_name):
         
