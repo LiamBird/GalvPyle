@@ -6,6 +6,9 @@ class BiologicData(object):
         import numpy as np
                
         data_read = []
+        
+        self.version = "2.0.1"
+        self._change_log = ["2.0.1    251204    added self._current_column and self._voltage_column for outputs from EC lab vs BT lab"]
 
         with open(filename) as f:
             for line in f.readlines():
@@ -14,8 +17,19 @@ class BiologicData(object):
                 data_read.append(line.strip("\n").split("\t"))
                 
         header_labels = data_read[header_lines-1]
+        
         self._df = pd.DataFrame(np.array(data_read[header_lines:], dtype=float), columns=header_labels[:-1])
         self.number_cycles = int(self._df["cycle number"].max())
+        
+        if "I/mA" in self._df.columns:
+            self._current_column = "I/mA"
+        elif "<I>/mA" in self._df.columns:
+            self._current_column = "<I>/mA"
+            
+        if "Ecell/V" in self._df.columns:
+            self._voltage_column = "Ecell/V"
+        elif "Ewe/V" in self._df.columns:
+            self._voltage_column = "Ewe/V"
         
         class _Cycle(object):
             def __init__(cycle_self):
@@ -26,7 +40,7 @@ class BiologicData(object):
                        "discharge": 0}
         
         data_types = {"capacity": "Capacity/mA.h",
-                      "voltage": "Ecell/V", 
+                      "voltage": self._voltage_column, 
                       }
         
         for cycle_type in cycle_types.keys():
@@ -34,7 +48,7 @@ class BiologicData(object):
         
         
         for ncyc in range(self.number_cycles):
-            cycle_df = self._df.loc[(self._df["cycle number"]==ncyc) & (abs(self._df["I/mA"])>0)]
+            cycle_df = self._df.loc[(self._df["cycle number"]==ncyc) & (abs(self._df[self._current_column])>0)]
             
             for cycle_keys, cycle_values in cycle_types.items():
                 cycle_capacity = cycle_df.loc[cycle_df["ox/red"]==cycle_values][data_types["capacity"]]
