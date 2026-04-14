@@ -3,6 +3,8 @@ def _find_cycle_plateaus(cell_data, cycle):
     
     x = cell_data.discharge.capacity[cycle]
     y = cell_data.discharge.voltage[cycle]
+    
+    
 
     straight_grad = (y[-1]-y[0])/(x[-1]-x[0])
     straight_intc = y[0]-(x[0]*straight_grad)
@@ -90,13 +92,13 @@ class Plateaus(object):
         keys = set(["EH_capacity_mAh", "EL_capacity_mAh", "EH_capacity_pc", "EL_capacity_pc",
                     "EH_voltage", 
                     "EL_voltage"])
-        self.n_cycles = cell_data.n_cycles
+        self.number_cycles = cell_data.number_cycles
 
-        self.__dict__.update([(key, np.full((self.n_cycles), np.nan)) for key in keys])
-        setattr(self, "EH_voltage_minmax", np.full((2, self.n_cycles), np.nan))
-        setattr(self, "EL_voltage_minmax", np.full((2, self.n_cycles), np.nan))
+        self.__dict__.update([(key, np.full((self.number_cycles), np.nan)) for key in keys])
+        setattr(self, "EH_voltage_minmax", np.full((2, self.number_cycles), np.nan))
+        setattr(self, "EL_voltage_minmax", np.full((2, self.number_cycles), np.nan))
         
-        for cycle in range(self.n_cycles):
+        for cycle in range(self.number_cycles):
             start_end_dict = _find_cycle_plateaus(cell_data, cycle)
             self.start_end_dict = start_end_dict
             
@@ -121,8 +123,8 @@ class Plateaus(object):
         import numpy as np
         
         fig, ax = plt.subplots()
-        ax.plot(np.arange(self.n_cycles), self.EH_capacity_pc, "o", color="black", label="E$_{H}$ 2.4V")
-        ax.plot(np.arange(self.n_cycles), self.EL_capacity_pc, "s", mfc="white", mec="black", label="E$_{L}$ 2.1V")
+        ax.plot(np.arange(self.number_cycles), self.EH_capacity_pc, "o", color="black", label="E$_{H}$ 2.4V")
+        ax.plot(np.arange(self.number_cycles), self.EL_capacity_pc, "s", mfc="white", mec="black", label="E$_{L}$ 2.1V")
         ax.set_ylim([0, 1])
         ax.axhline(0.25, color="k", ls="-")
         ax.axhline(0.75, color="k", ls=":")
@@ -136,9 +138,9 @@ class Plateaus(object):
         import numpy as np
         
         fig, ax = plt.subplots()
-        ax.errorbar(x=np.arange(self.n_cycles), y=self.EH_voltage, yerr=self.EH_voltage_minmax, 
+        ax.errorbar(x=np.arange(self.number_cycles), y=self.EH_voltage, yerr=self.EH_voltage_minmax, 
                     ls="None", color="k", lw=2, label="E$_{H}$ 2.4V")
-        ax.errorbar(x=np.arange(self.n_cycles), y=self.EL_voltage, yerr=self.EL_voltage_minmax,
+        ax.errorbar(x=np.arange(self.number_cycles), y=self.EL_voltage, yerr=self.EL_voltage_minmax,
                     ls="None", color="gray", label="E$_{L}$ 2.1V")
         ax.legend()
 

@@ -7,8 +7,10 @@ class BiologicData(object):
                
         data_read = []
         
-        self.version = "2.0.1"
-        self._change_log = ["2.0.1    251204    added self._current_column and self._voltage_column for outputs from EC lab vs BT lab, added np.nan for empty cycles"]
+        self.version = "2.1.0"
+        self._change_log = ["2.0.1    251204    added self._current_column and self._voltage_column for outputs from EC lab vs BT lab, added np.nan for empty cycles",
+                            "2.0.2     260413    added 'if 'mode' not in line' when making self._df to avoid files with repeated headers",
+                            "2.1.0     260414    added removing skipped cycles in init. Previously, some files returned to cycle 0 midway, unclear why"]
 
         with open(filename) as f:
             for line in f.readlines():
@@ -18,9 +20,13 @@ class BiologicData(object):
                 
         header_labels = data_read[header_lines-1]
         
-        self._df = pd.DataFrame(np.array(data_read[header_lines:], dtype=float), columns=header_labels[:-1])
-        self.number_cycles = int(self._df["cycle number"].max())
+        df = pd.DataFrame(np.array([line for line in data_read[header_lines:] if "mode" not in line], ## Added 13/04/2026 ## removed self._df 14/04/2026
+                                         dtype=float), columns=header_labels[:-1])
         
+        from copy import deepcopy
+        self._df = df ## added 14/04/2026
+        
+        ## Moved without modification 14/04/2026 so that filtering by self._current_column works
         if "I/mA" in self._df.columns:
             self._current_column = "I/mA"
         elif "<I>/mA" in self._df.columns:
@@ -30,6 +36,36 @@ class BiologicData(object):
             self._voltage_column = "Ecell/V"
         elif "Ewe/V" in self._df.columns:
             self._voltage_column = "Ewe/V"
+        
+        ## Removing skipped cycles: added 14/04/2026        
+        self.df = df.loc[df[self._current_column]!=0].reset_index(drop=True)
+
+        cycle_numbers = self.df["cycle number"].to_numpy()
+        skip_points = cycle_numbers[1:]<cycle_numbers[:-1]
+
+        if any(skip_points==True) == True:
+
+            cycle_number_breaks = np.argwhere(skip_points)[0]+1 ## +1 because of offset
+
+            cycle_number_breaks = [n for n in cycle_number_breaks if n>1]
+
+            for break_point in cycle_number_breaks:
+                previous_cycle_number = self.df["cycle number"].iloc[break_point-1]
+                apparent_cycle_number = self.df["cycle number"].iloc[break_point]
+                number_gap = previous_cycle_number-apparent_cycle_number
+                self.df = self.df.copy()
+
+                previous_time = self.df["time/s"].iloc[break_point-1]
+                apparent_time = self.df["time/s"].iloc[break_point]
+                time_gap = previous_time-apparent_time
+
+                self.df.loc[break_point:, "cycle number"] = self.df.loc[break_point:, "cycle number"]+1+number_gap
+                self.df.loc[break_point:, "time/s"] = self.df.loc[break_point:, "time/s"]+time_gap
+        
+        
+        self.number_cycles = int(self.df["cycle number"].max())
+        
+
         
         class _Cycle(object):
             def __init__(cycle_self):
@@ -46,15 +82,16 @@ class BiologicData(object):
         for cycle_type in cycle_types.keys():
             setattr(self, cycle_type, _Cycle()) 
         
-        
+        ## Changed output to numpy rather than pd.Series
+        ## 14.04.2026: changed references from self._df to self.df to use processed table!!
         for ncyc in range(self.number_cycles):
-            cycle_df = self._df.loc[(self._df["cycle number"]==ncyc) & (abs(self._df[self._current_column])>0)]
+            cycle_df = self.df.loc[(self.df["cycle number"]==ncyc) & (abs(self.df[self._current_column])>0)]
             
             for cycle_keys, cycle_values in cycle_types.items():
                 cycle_capacity = cycle_df.loc[cycle_df["ox/red"]==cycle_values][data_types["capacity"]]
-                vars(self)[cycle_keys].capacity.append(cycle_capacity-cycle_capacity.min())
+                vars(self)[cycle_keys].capacity.append((cycle_capacity-cycle_capacity.min()).to_numpy())
                 
-                vars(self)[cycle_keys].voltage.append(cycle_df.loc[cycle_df["ox/red"]==cycle_values][data_types["voltage"]])           
+                vars(self)[cycle_keys].voltage.append(cycle_df.loc[cycle_df["ox/red"]==cycle_values][data_types["voltage"]].to_numpy())           
                 if len(vars(self)[cycle_keys].capacity[-1]) > 0:
                     vars(self)[cycle_keys].summary_capacity.append(max(vars(self)[cycle_keys].capacity[-1]))
                 else:
