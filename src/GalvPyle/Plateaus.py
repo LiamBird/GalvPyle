@@ -3,8 +3,11 @@ def _find_cycle_plateaus(cell_data, cycle):
     
     x = cell_data.discharge.capacity[cycle]
     y = cell_data.discharge.voltage[cycle]
+<<<<<<< Updated upstream:src/GalvPyle/Plateaus.py
     
     
+=======
+>>>>>>> Stashed changes:Plateaus.py
 
     straight_grad = (y[-1]-y[0])/(x[-1]-x[0])
     straight_intc = y[0]-(x[0]*straight_grad)
@@ -80,8 +83,14 @@ class Plateaus(object):
     
     def __init__(self, cell_data):
 
+<<<<<<< Updated upstream:src/GalvPyle/Plateaus.py
         self._version = "15.10.2024"
         self._change_log = ["15.10.2024: Overhauled from old version to accommodate different capacity axes for variable rate data"]
+=======
+        self._version = "27.03.2026"
+        self._change_log = ["15.10.2024: Overhauled from old version to accommodate different capacity axes for variable rate data",
+                            "27.03.2026: changed from cell_data.n_cycles to cell_data.number_cycles"]
+>>>>>>> Stashed changes:Plateaus.py
 
         import warnings
         warnings.filterwarnings(action="ignore", category=RuntimeWarning)
@@ -92,6 +101,7 @@ class Plateaus(object):
         keys = set(["EH_capacity_mAh", "EL_capacity_mAh", "EH_capacity_pc", "EL_capacity_pc",
                     "EH_voltage", 
                     "EL_voltage"])
+<<<<<<< Updated upstream:src/GalvPyle/Plateaus.py
         self.number_cycles = cell_data.number_cycles
 
         self.__dict__.update([(key, np.full((self.number_cycles), np.nan)) for key in keys])
@@ -99,6 +109,15 @@ class Plateaus(object):
         setattr(self, "EL_voltage_minmax", np.full((2, self.number_cycles), np.nan))
         
         for cycle in range(self.number_cycles):
+=======
+        self.n_cycles = cell_data.number_cycles
+
+        self.__dict__.update([(key, np.full((self.n_cycles), np.nan)) for key in keys])
+        setattr(self, "EH_voltage_minmax", np.full((2, self.n_cycles), np.nan))
+        setattr(self, "EL_voltage_minmax", np.full((2, self.n_cycles), np.nan))
+        
+        for cycle in range(self.n_cycles):
+>>>>>>> Stashed changes:Plateaus.py
             start_end_dict = _find_cycle_plateaus(cell_data, cycle)
             self.start_end_dict = start_end_dict
             
@@ -123,8 +142,13 @@ class Plateaus(object):
         import numpy as np
         
         fig, ax = plt.subplots()
+<<<<<<< Updated upstream:src/GalvPyle/Plateaus.py
         ax.plot(np.arange(self.number_cycles), self.EH_capacity_pc, "o", color="black", label="E$_{H}$ 2.4V")
         ax.plot(np.arange(self.number_cycles), self.EL_capacity_pc, "s", mfc="white", mec="black", label="E$_{L}$ 2.1V")
+=======
+        ax.plot(np.arange(self.n_cycles), self.EH_capacity_pc, "o", color="black", label="E$_{H}$ 2.4V")
+        ax.plot(np.arange(self.n_cycles), self.EL_capacity_pc, "s", mfc="white", mec="black", label="E$_{L}$ 2.1V")
+>>>>>>> Stashed changes:Plateaus.py
         ax.set_ylim([0, 1])
         ax.axhline(0.25, color="k", ls="-")
         ax.axhline(0.75, color="k", ls=":")
@@ -138,9 +162,15 @@ class Plateaus(object):
         import numpy as np
         
         fig, ax = plt.subplots()
+<<<<<<< Updated upstream:src/GalvPyle/Plateaus.py
         ax.errorbar(x=np.arange(self.number_cycles), y=self.EH_voltage, yerr=self.EH_voltage_minmax, 
                     ls="None", color="k", lw=2, label="E$_{H}$ 2.4V")
         ax.errorbar(x=np.arange(self.number_cycles), y=self.EL_voltage, yerr=self.EL_voltage_minmax,
+=======
+        ax.errorbar(x=np.arange(self.n_cycles), y=self.EH_voltage, yerr=self.EH_voltage_minmax, 
+                    ls="None", color="k", lw=2, label="E$_{H}$ 2.4V")
+        ax.errorbar(x=np.arange(self.n_cycles), y=self.EL_voltage, yerr=self.EL_voltage_minmax,
+>>>>>>> Stashed changes:Plateaus.py
                     ls="None", color="gray", label="E$_{L}$ 2.1V")
         ax.legend()
 

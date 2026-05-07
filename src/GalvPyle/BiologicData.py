@@ -4,6 +4,14 @@ class BiologicData(object):
         import re
         import pandas as pd
         import numpy as np
+        
+        print("Running correct version")
+        self._version = "2.0.4"
+        self._updated = "27.03.2026"
+        self._change_log = {"25.11.2025": "Uploaded new version, corrected instrument type",
+                            "24.03.2026": "Added I/mA, <I>/mA labels",
+                            "26.03.2026": "Include increasing capacity only (avoids skip to 0 with 'X' shape",
+                            "27.03.2026": "Changed capacity_data and voltage_data back to numpy arrays (previously pd.Series)"}
                
         data_read = []
         
@@ -15,8 +23,10 @@ class BiologicData(object):
         with open(filename) as f:
             for line in f.readlines():
                 if "Nb header lines" in line:
+                    print(line)
                     header_lines = int(re.findall("\d+", line)[0])
                 data_read.append(line.strip("\n").split("\t"))
+<<<<<<< Updated upstream:src/GalvPyle/BiologicData.py
                 
         header_labels = data_read[header_lines-1]
         
@@ -66,14 +76,29 @@ class BiologicData(object):
         self.number_cycles = int(self.df["cycle number"].max())
         
 
+=======
+                                
+        self._instrument_type = data_read[0][0].split(" ")[0]
+>>>>>>> Stashed changes:BiologicData.py
         
+        header_labels = data_read[header_lines-1]
+        header_labels = [name for name in header_labels if len(name)>0]
+        
+        data_read = [line for line in data_read if len(line) == len(header_labels)]
+        
+        self._df = pd.DataFrame(np.array(data_read[header_lines:], dtype=float), columns=header_labels)
+        
+        
+        self.number_cycles = int(self._df["cycle number"].max())
+
         class _Cycle(object):
             def __init__(cycle_self):
                 cycle_self_keys = ["capacity", "voltage", "summary_capacity"]
                 cycle_self.__dict__.update([(keys, []) for keys in cycle_self_keys])
-            
+
         cycle_types = {"charge": 1,
                        "discharge": 0}
+<<<<<<< Updated upstream:src/GalvPyle/BiologicData.py
         
         data_types = {"capacity": "Capacity/mA.h",
                       "voltage": self._voltage_column, 
@@ -96,6 +121,60 @@ class BiologicData(object):
                     vars(self)[cycle_keys].summary_capacity.append(max(vars(self)[cycle_keys].capacity[-1]))
                 else:
                     vars(self)[cycle_keys].summary_capacity.append(np.nan)
+=======
+
+        data_types = {"capacity": "Capacity/mA.h"}
+
+        if "I/mA" in header_labels:
+            data_types.update([("current", "I/mA")])
+        elif "<I>/mA" in header_labels:
+            data_types.update([("current", "<I>/mA")])
+
+        if self._instrument_type == "BT-Lab":
+            data_types.update([("voltage", "Ecell/V")])
+        elif self._instrument_type == "EC-Lab":
+            data_types.update([("voltage", "Ewe/V")])
+
+
+        for cycle_type in cycle_types.keys():
+            setattr(self, cycle_type, _Cycle()) 
+
+
+        for ncyc in range(self.number_cycles):
+            cycle_df = self._df.loc[(self._df["cycle number"]==ncyc) & 
+                                    (abs(self._df[data_types["current"]])>0)
+                                   ]
+
+            for cycle_keys, cycle_values in cycle_types.items():
+                cycle_data = cycle_df.loc[cycle_df["ox/red"]==cycle_values]
+                cycle_data[data_types["capacity"]] = abs(cycle_data[data_types["capacity"]])
+                
+                capacity_values = cycle_data[data_types["capacity"]].to_numpy()
+                capacity_break = np.nonzero((capacity_values[1:]> capacity_values[:-1])==False)[0]
+                
+                if capacity_break.shape[0] != 0:
+                    capacity_data = cycle_data.iloc[:capacity_break[0]][data_types["capacity"]].to_numpy()
+                    voltage_data = cycle_data.iloc[:capacity_break[0]][data_types["voltage"]].to_numpy()
+                else:
+                    capacity_data = cycle_data[data_types["capacity"]].to_numpy()
+                    voltage_data = cycle_data[data_types["voltage"]].to_numpy()
+                if capacity_data.shape[0] > 0:
+                    
+                    vars(self)[cycle_keys].capacity.append(capacity_data-np.nanmin(capacity_data))
+
+                    vars(self)[cycle_keys].voltage.append(voltage_data)
+                else:
+                    vars(self)[cycle_keys].capacity.append(np.full((1), np.nan))
+
+                    vars(self)[cycle_keys].voltage.append(np.full((1), np.nan))
+                    
+                
+                if vars(self)[cycle_keys].capacity[-1].shape[0] > 0:
+                    vars(self)[cycle_keys].summary_capacity.append(max(vars(self)[cycle_keys].capacity[-1]))
+                else:
+                    vars(self)[cycle_keys].summary_capacity.append(np.nan)        
+            
+>>>>>>> Stashed changes:BiologicData.py
                 
     def save_to_excel(self, save_file_name):
         
