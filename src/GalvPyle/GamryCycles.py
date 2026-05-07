@@ -2,7 +2,7 @@ class GamryCycles(object):
     def __init__(self, path):
         import numpy as np
         import re
-        from GamryData import GamryData
+        from .GamryData import GamryData
         import os
         
         gamry_data_1 = dict([(keys, 

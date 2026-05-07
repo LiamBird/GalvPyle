@@ -14,7 +14,8 @@ import warnings
 ## DOI: 10.1039/C5CC07167D
 
 class ICI(object):
-    def __init__(self, filename, reload=True, verbose=True, reload_check=False, save_csv=True, raw_only=False):
+    def __init__(self, filename, reload=True, verbose=True, reload_check=False, save_csv=True, raw_only=False,
+                fix_cycle_numbers=False):
         
         self._version = "2026.03.14"
         self._change_log = {"2026.03.14": "Added line in data read to ensure repeated headers are not included"}
@@ -35,7 +36,7 @@ class ICI(object):
                 print("Reloaded data from charge/ discharge only, omitting rest steps")
             
         else:
-            self.raw = self._dataload(filename)
+            self.raw = self._dataload(filename, fix_cycle_numbers=fix_cycle_numbers)
         
         if reload == True and reload_check==False:
             if verbose==True:
@@ -75,20 +76,20 @@ class ICI(object):
                 if last_cycle == proc_df["cycn"].max():
                     print("Running line 66")
                     self.proc = proc_df 
-                    self.raw = self._dataload(filename)
+                    self.raw = self._dataload(filename, fix_cycle_numbers=fix_cycle_numbers)
                     if verbose==True:
                         
                         print("Reloaded previously processed data (up to date)")
                 else:
                     print("Running line 69")
                     print("Calculating and saving new values")
-                    self.proc = self._proc_data()
+                    self._proc_data()
                     
         if reload == False:
             print("Calculating and saving new values")
-            self.raw = self._dataload(filename)
+            self.raw = self._dataload(filename, fix_cycle_numbers=fix_cycle_numbers)
             if raw_only==False:
-                self.proc = self._proc_data()
+                self._proc_data()
             
         if save_csv == True and raw_only==False:
             self.proc.to_csv(os.path.join(self.path, self.filename)+".csv")
@@ -98,27 +99,58 @@ class ICI(object):
 
             
     ## Loading raw data
-    def _dataload(self, filename):
+    def _dataload(self, filename, fix_cycle_numbers):
         data_raw = []
-        print(filename)
+    
+        limits = {}
+        target = "none_selected_"
 
         with open(filename) as f:
             for line in notebook.tqdm(f.readlines()):
                 if "Nb header lines" in line:
+                    print(line)
                     headers = int(re.findall(r"\d+", line)[0])
-                    
-                data_raw.append(line.strip("\n").split("\t"))
 
-        columns = data_raw[headers-1][:-1]
+                if "rec" in line and "type" in line and "Time" in line:
+                    target = line.split("\t")[0].split("_")[0]
+                    
+                if target in line:
+                    parts = re.split(r"\s{2,}", line.strip())
+                    limits.update([(parts[0], parts[1:])])
+                
+                
+                data_raw.append(line.strip("\n").split("\t"))
+        
+        columns = data_raw[headers-1]
+        data_raw = [line for line in data_raw if len(line)>0]
+        
         data_read = np.array([line for line in data_raw[headers:] if "mode" not in line], dtype=float) ## changed 13/04/2026
         
+        ## TODO - fix this!!
+        try:
+            df = pd.DataFrame(data_read, columns=columns[:data_read.shape[1]])
+        except:
+            df = pd.DataFrame(data_read, columns=columns[:-1])
 
-        df = pd.DataFrame(data_read, columns=columns)
+        if fix_cycle_numbers==True:
+            limits = pd.DataFrame(limits)
+            limits.columns = ["_".join((column.split("_")[1:])) for column in limits.columns]
+            limits["value"] = limits["value"].astype(float)
+
+            time = df["time/s"].to_numpy()
+            cycle_breaks = np.nonzero(time[1:]-time[:-1]>2*max(limits["value"]))[0]
+            cycle_breaks = np.insert(cycle_breaks, 0, 0)
+            cycle_breaks = np.append(cycle_breaks, len(df))
+
+            for nidx, idx in enumerate(cycle_breaks[:-1]):
+                df.loc[cycle_breaks[nidx]: cycle_breaks[nidx+1], "cycle number"] = nidx
+                
+        self._df = df ## keeping raw df available
 
         ## Below adapted from Lacey 
         raw = df[["time/s", "cycle number", "I/mA", "Ecell/V", "Q charge/mA.h", "Q discharge/mA.h"]]
         raw.columns = ["t", "cycn", "I", "E", "cQ", "dQ"]
-        
+
         raw = raw.copy()
         raw.loc[:, "cQ"] = raw["cQ"]
         raw.loc[:, "dQ"] = raw["dQ"]
@@ -159,6 +191,12 @@ class ICI(object):
         raw.loc[:, "adjQ"] = raw["dQ"] - raw["cQ"]
 
         return raw
+        
+#         except:
+#             self.data_read = data_read
+#             self.columns = columns
+#             self.data_raw = data_raw
+#             self.headers = headers
 
     ## Processing raw data
 
@@ -203,59 +241,61 @@ class ICI(object):
                 return np.nan
 
             return (E_current - E_prev) / denom
+        try:
+            # 5) build proc DataFrame
+            max_rest = int(self.raw["rests"].max()) if not self.raw["rests"].isnull().all() else 0
+            rest_list = list(range(1, max_rest + 1))
 
-        # 5) build proc DataFrame
-        max_rest = int(self.raw["rests"].max()) if not self.raw["rests"].isnull().all() else 0
-        rest_list = list(range(1, max_rest + 1))
+            proc_rows = {
+                "rest": [],
+                "state": [],
+                "cycn": [],
+                "Q": [],
+                "E": [],
+                "R": []
+            }
 
-        proc_rows = {
-            "rest": [],
-            "state": [],
-            "cycn": [],
-            "Q": [],
-            "E": [],
-            "R": []
-        }
+            print("Calculating resistance")
 
-        print("Calculating resistance")
+            for r in notebook.tqdm(rest_list):
+                prev = r - 1
+                sel_prev = self.raw[self.raw["rests"] == prev]
 
-        for r in notebook.tqdm(rest_list):
-            prev = r - 1
-            sel_prev = self.raw[self.raw["rests"] == prev]
+                # get tail values from previous rest (if available), otherwise NaN
+                if not sel_prev.empty:
+                    last_state = sel_prev["state"].iloc[-1]
+                    last_cycn = sel_prev["cycn"].iloc[-1] if "cycn" in sel_prev else np.nan
+                    last_adjQ = sel_prev["adjQ"].iloc[-1] if "adjQ" in sel_prev else np.nan
+                    last_E = sel_prev["E"].iloc[-1] if "E" in sel_prev else np.nan
+                else:
+                    last_state = np.nan
+                    last_cycn = np.nan
+                    last_adjQ = np.nan
+                    last_E = np.nan
 
-            # get tail values from previous rest (if available), otherwise NaN
-            if not sel_prev.empty:
-                last_state = sel_prev["state"].iloc[-1]
-                last_cycn = sel_prev["cycn"].iloc[-1] if "cycn" in sel_prev else np.nan
-                last_adjQ = sel_prev["adjQ"].iloc[-1] if "adjQ" in sel_prev else np.nan
-                last_E = sel_prev["E"].iloc[-1] if "E" in sel_prev else np.nan
-            else:
-                last_state = np.nan
-                last_cycn = np.nan
-                last_adjQ = np.nan
-                last_E = np.nan
+                proc_rows["rest"].append(r)
+                proc_rows["state"].append(last_state)
+                proc_rows["cycn"].append(last_cycn)
+                proc_rows["Q"].append(last_adjQ)
+                proc_rows["E"].append(last_E)
+                proc_rows["R"].append(f_R(r))
 
-            proc_rows["rest"].append(r)
-            proc_rows["state"].append(last_state)
-            proc_rows["cycn"].append(last_cycn)
-            proc_rows["Q"].append(last_adjQ)
-            proc_rows["E"].append(last_E)
-            proc_rows["R"].append(f_R(r))
+            proc = pd.DataFrame(proc_rows)
 
-        proc = pd.DataFrame(proc_rows)
+            # 6) replace non-finite proc.R with NaN (matches R's is.finite/NA behavior)
+            proc.loc[:, "R"] = proc["R"].apply(lambda v: v if np.isfinite(v) else np.nan)
 
-        # 6) replace non-finite proc.R with NaN (matches R's is.finite/NA behavior)
-        proc.loc[:, "R"] = proc["R"].apply(lambda v: v if np.isfinite(v) else np.nan)
+            setattr(self, "proc", proc)
 
-        return proc
+            # Now 'proc' is equivalent to the R 'proc' data.frame
+            # and 'raw' has the new columns 'state', 'rests', and 'adjQ'.
 
-        # Now 'proc' is equivalent to the R 'proc' data.frame
-        # and 'raw' has the new columns 'state', 'rests', and 'adjQ'.
-
-        # Optional: show quick summaries
-#         print(proc.head())
-#         print(raw[["t", "cycn", "I", "E", "cQ", "dQ", "adjQ", "state", "rests"]].head())
-#             self.proc = proc
-#             self.raw = raw
+            # Optional: show quick summaries
+    #         print(proc.head())
+    #         print(raw[["t", "cycn", "I", "E", "cQ", "dQ", "adjQ", "state", "rests"]].head())
+    #             self.proc = proc
+    #             self.raw = raw
+        except:
+            pass
 
             

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "GalvPyle"
+version = "0.1.0"
+description = "Tools for plotting and analysing electrochemical data including galvanostatic cycling, cyclic voltammetry, and electrochemical impedance spectroscopy"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  {name = "Liam Bird"}
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

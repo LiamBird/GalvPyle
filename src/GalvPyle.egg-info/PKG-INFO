@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: GalvPyle
+Version: 0.1.0
+Summary: Tools for plotting and analysing electrochemical data including galvanostatic cycling, cyclic voltammetry, and electrochemical impedance spectroscopy
+Author: Liam Bird
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown

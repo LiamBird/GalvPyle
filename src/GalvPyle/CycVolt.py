@@ -1,5 +1,5 @@
 import numpy as np
-from mpt_to_df import mpt_to_df
+from .mpt_to_df import mpt_to_df
 
 class cvPeaks(object):
     def __init__(peaks_self, cv, t_step=10, intercept_range=5):

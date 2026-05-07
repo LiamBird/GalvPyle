@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os
 import glob
 
-from CycVolt import CycVolt
+from .CycVolt import CycVolt
 
 from lmfit import Model, Parameters
 import matplotlib as mpl

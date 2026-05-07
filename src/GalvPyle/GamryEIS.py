@@ -1,7 +1,7 @@
 class GamryEIS(object):
     def __init__(self, filename):
         import pandas as pd
-        
+        import numpy as np
         import warnings
         warnings.filterwarnings(action="ignore", category=FutureWarning)
         
@@ -21,8 +21,9 @@ class GamryEIS(object):
                         header_read = False
 
                         columns = data_read[nline-1]
-
-        df = pd.DataFrame(data, dtype=float, columns=columns)
+        
+        data = np.array(data)
+        df = pd.DataFrame(data[:, 1:], dtype=float, columns=columns[1:])
         
         self.df = df
         self.freq = df["Freq"].to_numpy()

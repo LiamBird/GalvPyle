@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/GalvPyle/BiologicData.py
+src/GalvPyle/CycVolt.py
+src/GalvPyle/GamryCycles.py
+src/GalvPyle/GamryData.py
+src/GalvPyle/GamryEIS.py
+src/GalvPyle/ICI.py
+src/GalvPyle/MultiCycVolt.py
+src/GalvPyle/Plateaus.py
+src/GalvPyle/__init__.py
+src/GalvPyle/mpt_to_df.py
+src/GalvPyle.egg-info/PKG-INFO
+src/GalvPyle.egg-info/SOURCES.txt
+src/GalvPyle.egg-info/dependency_links.txt
+src/GalvPyle.egg-info/top_level.txt
