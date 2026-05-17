@@ -213,11 +213,12 @@ def _proc_data(self):
     self.proc = proc
     
 class ICI(object):
-    def __init__(self, filename, reload_csv=True, reload=True, fix_cycle_numbers=False):
+    def __init__(self, filename, reload_csv=True, reload=True, fix_cycle_numbers=False, save_path=None):
         
-        self._version = "2026.05.08"
+        self._version = "2026.05.17"
         self._change_log = {"2026.03.14": "Added line in data read to ensure repeated headers are not included",
-                            "2026.03.23": "Split out functions for ease of diagnostics"}
+                            "2026.04.23": "Split out functions for ease of diagnostics",
+                            "2026.05.17": "Added save_path"}
         
         warnings.filterwarnings(action="ignore", message="SettingWithCopyWarning")
         
@@ -232,8 +233,13 @@ class ICI(object):
             time_str = "%d/%m/%Y %H:%M:%S"
             self.data_last_updated = time.strftime(time_str, time.localtime(creation_time))
             
-            ## Processed filenames: for checking and saving        
-            processed_fname = os.path.join(self.path, self.filename+"_processed.csv")
+            ## Processed filenames: for checking and saving   
+            if type(save_path) == type(None):
+                save_path = os.path.join(self.path, "processed")
+            elif save_path == "none":
+                save_path = os.path.join(self.path)
+                
+            processed_fname = os.path.join(save_path, self.filename+"_processed.csv")
             processed_exists = os.path.isfile(processed_fname)
 
         if reload_csv == True:
@@ -253,7 +259,7 @@ class ICI(object):
             ## Annotate the data with charge/ discharge/ rest
             _annotate_raw(self)
             raw_chargedischarge = self.raw.loc[self.raw["state"]!="R"]
-            raw_chargedischarge.to_csv(os.path.join(self.path, self.filename+"_raw_chargedischarge.csv"))
+            raw_chargedischarge.to_csv(os.path.join(save_path, self.filename+"_raw_chargedischarge.csv"))
             
             ## Calculate the internal resistance
             _proc_data(self)
@@ -261,7 +267,7 @@ class ICI(object):
             
         ## Case 2: prevous rawchargedischarge exists 
         if processed_exists==True and reload==True: ## changed 29.04.2026
-            self.raw = pd.read_csv(os.path.join(self.path, self.filename+"_raw_chargedischarge.csv"),
+            self.raw = pd.read_csv(os.path.join(save_path, self.filename+"_raw_chargedischarge.csv"),
                                    index_col=0)
-            self.proc = pd.read_csv(os.path.join(self.path, self.filename+"_processed.csv"), index_col=0)
+            self.proc = pd.read_csv(os.path.join(save_path, self.filename+"_processed.csv"), index_col=0)
     
