@@ -5,3 +5,6 @@ Summary: Tools for plotting and analysing electrochemical data including galvano
 Author: Liam Bird
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
+
+# GalvPyle
+Python code for displaying and analysing electrochemical data from Biologic, Gamry, Arbin, and Land cyclers (designed for lithium-sulfur data, but may be adaptable)
