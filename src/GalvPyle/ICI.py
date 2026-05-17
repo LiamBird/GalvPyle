@@ -29,7 +29,7 @@ def _dataread(self, filename, fix_cycle_numbers=False):
                 limits.update([(parts[0], parts[1:])])
 
             data_raw.append(line.strip("\n").split("\t"))
-    
+
     columns = data_raw[headers-1]
     try:
         data_read = np.array([line for line in data_raw[headers:] if "mode" not in line], dtype=float) ## changed 13/04/2026
@@ -213,35 +213,37 @@ def _proc_data(self):
     self.proc = proc
     
 class ICI(object):
-    def __init__(self, filename, reload=True, fix_cycle_numbers=False, save_path=None):
+    def __init__(self, filename, reload_csv=True, reload=True, fix_cycle_numbers=False):
         
-        self._version = "2026.03.23"
+        self._version = "2026.05.08"
         self._change_log = {"2026.03.14": "Added line in data read to ensure repeated headers are not included",
                             "2026.03.23": "Split out functions for ease of diagnostics"}
         
         warnings.filterwarnings(action="ignore", message="SettingWithCopyWarning")
         
         ## Checking when the raw datafile was last updated: used for ongoing data
-        self.filename = os.path.split(filename)[-1].strip(".mpt") ## used for labelling later
-        self.path = os.path.split(filename)[0]
-        self._pfilename = filename
-        mpt_update_time = os.path.getmtime(filename)
-        time_str = "%d/%m/%Y %H:%M:%S"
-        self.data_last_updated = time.strftime(time_str, time.localtime(mpt_update_time))
 
-        if save_path == None:
-            save_path = os.path.join(self.path, "processed")
+        ## 08/05/2026 - added if reload_csv terms
+        if reload_csv == False:
+            self.filename = os.path.split(filename)[-1].strip(".mpt") ## used for labelling later
+            self.path = os.path.split(filename)[0]
+            self._pfilename = filename
+            creation_time = os.path.getmtime(filename)
+            time_str = "%d/%m/%Y %H:%M:%S"
+            self.data_last_updated = time.strftime(time_str, time.localtime(creation_time))
             
-        ## Processed filenames: for checking and saving        
-        processed_fname = os.path.join(save_path, self.filename+"_processed.csv")
-        processed_exists = os.path.isfile(processed_fname)
+            ## Processed filenames: for checking and saving        
+            processed_fname = os.path.join(self.path, self.filename+"_processed.csv")
+            processed_exists = os.path.isfile(processed_fname)
 
-        if processed_exists == True: ## Added 15.05.2026
-            processed_update_time = os.path.getmtime(processed_fname)
-            self.processed_update_time = processed_update_time
+        if reload_csv == True:
+            reload = True ## added 08/05/2026
+            self.filename = os.path.split(filename)[-1]
 
-            if mpt_update_time > processed_update_time:
-                reload = False        
+            if self.filename.split("_")[-1] == "processed":
+                self.filename = self.filename[:len("_processed.csv")]
+            elif "raw_chargedischarge" in filename:
+                self.filename = self.filename[:len("_raw_chargedischarge.csv")]
         
         ## Case 1: no rawchargedischarge, or reloading
         if processed_exists==False or reload==False: ## changed 29.04.2026
@@ -251,7 +253,7 @@ class ICI(object):
             ## Annotate the data with charge/ discharge/ rest
             _annotate_raw(self)
             raw_chargedischarge = self.raw.loc[self.raw["state"]!="R"]
-            raw_chargedischarge.to_csv(os.path.join(save_path, self.filename+"_raw_chargedischarge.csv"))
+            raw_chargedischarge.to_csv(os.path.join(self.path, self.filename+"_raw_chargedischarge.csv"))
             
             ## Calculate the internal resistance
             _proc_data(self)
@@ -259,7 +261,7 @@ class ICI(object):
             
         ## Case 2: prevous rawchargedischarge exists 
         if processed_exists==True and reload==True: ## changed 29.04.2026
-            self.raw = pd.read_csv(os.path.join(save_path, self.filename+"_raw_chargedischarge.csv"),
+            self.raw = pd.read_csv(os.path.join(self.path, self.filename+"_raw_chargedischarge.csv"),
                                    index_col=0)
-            self.proc = pd.read_csv(os.path.join(save_path, self.filename+"_processed.csv"), index_col=0)
+            self.proc = pd.read_csv(os.path.join(self.path, self.filename+"_processed.csv"), index_col=0)
     
