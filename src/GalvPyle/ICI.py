@@ -221,26 +221,26 @@ class ICI(object):
                             "2026.05.17": "Added save_path"}
         
         warnings.filterwarnings(action="ignore", message="SettingWithCopyWarning")
-        
+        processed_exists = False ## As a default, otherwise unassigned later
         ## Checking when the raw datafile was last updated: used for ongoing data
 
         ## 08/05/2026 - added if reload_csv terms
-        if reload_csv == False:
-            self.filename = os.path.split(filename)[-1].strip(".mpt") ## used for labelling later
-            self.path = os.path.split(filename)[0]
-            self._pfilename = filename
-            creation_time = os.path.getmtime(filename)
-            time_str = "%d/%m/%Y %H:%M:%S"
-            self.data_last_updated = time.strftime(time_str, time.localtime(creation_time))
+        # if reload_csv == False:
+        self.filename = os.path.split(filename)[-1].strip(".mpt") ## used for labelling later
+        self.path = os.path.split(filename)[0]
+        self._pfilename = filename
+        creation_time = os.path.getmtime(filename)
+        time_str = "%d/%m/%Y %H:%M:%S"
+        self.data_last_updated = time.strftime(time_str, time.localtime(creation_time))
+        
+        ## Processed filenames: for checking and saving   
+        if type(save_path) == type(None):
+            save_path = os.path.join(self.path, "processed")
+        elif save_path == "none":
+            save_path = os.path.join(self.path)
             
-            ## Processed filenames: for checking and saving   
-            if type(save_path) == type(None):
-                save_path = os.path.join(self.path, "processed")
-            elif save_path == "none":
-                save_path = os.path.join(self.path)
-                
-            processed_fname = os.path.join(save_path, self.filename+"_processed.csv")
-            processed_exists = os.path.isfile(processed_fname)
+        processed_fname = os.path.join(save_path, self.filename+"_processed.csv")
+        processed_exists = os.path.isfile(processed_fname)
 
         if reload_csv == True:
             reload = True ## added 08/05/2026
