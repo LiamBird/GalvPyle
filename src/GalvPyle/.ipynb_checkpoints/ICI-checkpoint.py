@@ -132,7 +132,7 @@ def _annotate_raw(self):
     # 3) adjQ = dQ - cQ
     raw.loc[:, "adjQ"] = raw["dQ"] - raw["cQ"]
 
-    self.raw = raw
+    return raw
     
     
 def f_R(self, rest_index):
@@ -210,64 +210,86 @@ def _proc_data(self):
     # 6) replace non-finite proc.R with NaN (matches R's is.finite/NA behavior)
     proc.loc[:, "R"] = proc["R"].apply(lambda v: v if np.isfinite(v) else np.nan)
 
-    self.proc = proc
+    return proc
     
 class ICI(object):
-    def __init__(self, filename, reload_csv=True, reload=True, fix_cycle_numbers=False, save_path=None):
-        
-        self._version = "2026.05.17"
+    def __init__(self, filename, verbose=False, fix_cycle_numbers=False):
+
+        self._version = "2026.06.03"
         self._change_log = {"2026.03.14": "Added line in data read to ensure repeated headers are not included",
                             "2026.04.23": "Split out functions for ease of diagnostics",
-                            "2026.05.17": "Added save_path"}
+                            "2026.05.17": "Added save_path",
+                            "2026.06.03": "Restructured for reloading legacy files and dealing with 'CROP_' filenames"}
         
-        warnings.filterwarnings(action="ignore", message="SettingWithCopyWarning")
-        processed_exists = False ## As a default, otherwise unassigned later
-        ## Checking when the raw datafile was last updated: used for ongoing data
+        self.filename_norm = os.path.normpath(filename)
+        self.filepath = os.path.split(self.filename_norm)[0]
+        self.file_label = os.path.split(self.filename_norm)[-1].strip("CROP_").strip(".mpt")        
+        self.cropped_filename = os.path.join(self.filepath, "CROP_"+self.file_label+".mpt")
+        self.uncropped_filename = os.path.join(self.filepath, self.file_label+".mpt")
 
-        ## 08/05/2026 - added if reload_csv terms
-        # if reload_csv == False:
-        self.filename = os.path.split(filename)[-1].strip(".mpt") ## used for labelling later
-        self.path = os.path.split(filename)[0]
-        self._pfilename = filename
-        creation_time = os.path.getmtime(filename)
-        time_str = "%d/%m/%Y %H:%M:%S"
-        self.data_last_updated = time.strftime(time_str, time.localtime(creation_time))
+        processed_fname = self.file_label+"_processed.csv"
+        charge_discharge_fname = self.file_label+"_raw_chargedischarge.csv"
         
-        ## Processed filenames: for checking and saving   
-        if type(save_path) == type(None):
-            save_path = os.path.join(self.path, "processed")
-        elif save_path == "none":
-            save_path = os.path.join(self.path)
-            
-        processed_fname = os.path.join(save_path, self.filename+"_processed.csv")
-        processed_exists = os.path.isfile(processed_fname)
+        ## 1. Has the file previously been cropped and is this data available?            
+        if os.path.isfile(self.cropped_filename):
+            self.filename = self.cropped_filename
+            if verbose == True:
+                print("Exists as cropped: switching to cropped_filename")
+        elif os.path.isfile(self.uncropped_filename):
+            self.filename = self.uncropped_filename
+            print("Exists as uncropped")
+        else:
+            print(f"File not found: {self.file_label}")
 
-        if reload_csv == True:
-            reload = True ## added 08/05/2026
-            self.filename = os.path.split(filename)[-1]
+        ## 2. Has the data previously been processed to make a charge/ discharge file and a summary file?
+        self.filename_dir = os.path.split(self.filename_norm)[0]
+        self.processed_dir = os.path.join(self.filename_dir, "processed")
 
-            if self.filename.split("_")[-1] == "processed":
-                self.filename = self.filename[:len("_processed.csv")]
-            elif "raw_chargedischarge" in filename:
-                self.filename = self.filename[:len("_raw_chargedischarge.csv")]
-        
-        ## Case 1: no rawchargedischarge, or reloading
-        if processed_exists==False or reload==False: ## changed 29.04.2026
-            ## Read from the mpt file
-            _dataread(self, filename, fix_cycle_numbers=fix_cycle_numbers)
+        if os.path.isdir(self.processed_dir):
+            if os.path.isfile(os.path.join(self.processed_dir, "CROP_"+processed_fname)):
+                
+                os.rename(os.path.join(self.processed_dir, "CROP_"+processed_fname),
+                          os.path.join(self.processed_dir, processed_fname))
+
+            incorrect_mpt_names = [file for file in os.listdir(self.processed_dir) if ".mpt_raw_chargedischarge" in file]
+            for file in incorrect_mpt_names:
+                os.rename(os.path.join(self.processed_dir, file),
+                          os.path.join(self.processed_dir, file.replace(".mpt_raw_chargedischarge", "_raw_chargedischarge")))
             
-            ## Annotate the data with charge/ discharge/ rest
-            _annotate_raw(self)
-            raw_chargedischarge = self.raw.loc[self.raw["state"]!="R"]
-            raw_chargedischarge.to_csv(os.path.join(save_path, self.filename+"_raw_chargedischarge.csv"))
+            if os.path.isfile(os.path.join(self.processed_dir, "CROP_"+charge_discharge_fname)):
+                os.rename(os.path.join(self.processed_dir, "CROP_"+charge_discharge_fname),
+                          os.path.join(self.processed_dir, charge_discharge_fname))
+
             
-            ## Calculate the internal resistance
-            _proc_data(self)
-            self.proc.to_csv(processed_fname)
-            
-        ## Case 2: prevous rawchargedischarge exists 
-        if processed_exists==True and reload==True: ## changed 29.04.2026
-            self.raw = pd.read_csv(os.path.join(save_path, self.filename+"_raw_chargedischarge.csv"),
-                                   index_col=0)
-            self.proc = pd.read_csv(os.path.join(save_path, self.filename+"_processed.csv"), index_col=0)
-    
+            ## Case 1: the files exist and have the expected names
+            if os.path.isfile(os.path.join(self.processed_dir, processed_fname)):
+                raw_data_update_time = os.path.getmtime(self.filename)
+                processed_update_time = os.path.getmtime(os.path.join(self.processed_dir, processed_fname))
+
+                if processed_update_time > raw_data_update_time:
+                    self.proc = pd.read_csv(os.path.join(self.processed_dir, processed_fname), index_col=0)
+                    self.raw = pd.read_csv(os.path.join(self.processed_dir, charge_discharge_fname), index_col=0)
+
+            ## Case 2: The files do not exist
+            elif not os.path.isfile(os.path.join(self.processed_dir, processed_fname)):
+                if verbose == True:
+                    print("Files do not yet exist")
+                _dataread(self, filename=self.filename, 
+                      fix_cycle_numbers=fix_cycle_numbers)
+                self.raw = _annotate_raw(self) ## returns self.raw
+                self.proc = _proc_data(self) ## returns self.proc
+
+                self.raw.to_csv(os.path.join(self.processed_dir, charge_discharge_fname))
+                self.proc.to_csv(os.path.join(self.processed_dir, processed_fname))
+
+        ## 3. If the data has not previously been processed, do so:
+        elif not os.path.isdir(self.processed_dir):
+            if verbose == True:
+                print("Processed data directory does not yet exist")
+            print(self.filename)
+            print(os.path.isfile(self.filename))
+            _dataread(self, filename=self.filename, 
+                      fix_cycle_numbers=fix_cycle_numbers)
+            self.raw = _annotate_raw(self)
+            self.proc = _proc_data(self)
+                        
