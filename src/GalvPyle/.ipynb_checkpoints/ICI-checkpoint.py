@@ -213,7 +213,12 @@ def _proc_data(self):
     return proc
     
 class ICI(object):
-    def __init__(self, filename, verbose=False, fix_cycle_numbers=False):
+    """
+        Version = 04/06/2026
+    """
+    def __init__(self, filename, verbose=False, fix_cycle_numbers=False, test_var=None):
+
+        
 
         self._version = "2026.06.03"
         self._change_log = {"2026.03.14": "Added line in data read to ensure repeated headers are not included",
@@ -240,12 +245,16 @@ class ICI(object):
             print("Exists as uncropped")
         else:
             print(f"File not found: {self.file_label}")
+            print(f"self.uncropped_filename = {self.uncropped_filename}")
+            print(f"self.cropped_filename = {self.cropped_filename}")
 
         ## 2. Has the data previously been processed to make a charge/ discharge file and a summary file?
         self.filename_dir = os.path.split(self.filename_norm)[0]
         self.processed_dir = os.path.join(self.filename_dir, "processed")
 
         if os.path.isdir(self.processed_dir):
+            if verbose==True:
+                print(f"Processed dir exists: {self.processed_dir}")
             if os.path.isfile(os.path.join(self.processed_dir, "CROP_"+processed_fname)):
                 
                 os.rename(os.path.join(self.processed_dir, "CROP_"+processed_fname),
@@ -286,10 +295,17 @@ class ICI(object):
         elif not os.path.isdir(self.processed_dir):
             if verbose == True:
                 print("Processed data directory does not yet exist")
-            print(self.filename)
-            print(os.path.isfile(self.filename))
+            # print(self.filename)
+            # print(os.path.isfile(self.filename))
             _dataread(self, filename=self.filename, 
                       fix_cycle_numbers=fix_cycle_numbers)
             self.raw = _annotate_raw(self)
             self.proc = _proc_data(self)
+
+            ## Added 04/06/2026
+            os.makedirs(self.processed_dir)
+            self.raw.to_csv(os.path.join(self.processed_dir, charge_discharge_fname))
+            self.proc.to_csv(os.path.join(self.processed_dir, processed_fname))
+
+            
                         
