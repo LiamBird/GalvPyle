@@ -8,7 +8,7 @@ from tqdm import notebook
 import time
 import warnings
 
-def _dataread(self, filename, fix_cycle_numbers=False):
+def _dataread(filename, fix_cycle_numbers=False):
     data_raw = []
     
     ## For fixing cycle numbers
@@ -38,7 +38,7 @@ def _dataread(self, filename, fix_cycle_numbers=False):
     
     
     df = pd.DataFrame(data_read, columns=columns[:data_read.shape[1]])
-    self._df = df ## keeping raw df available
+    # self._df = df ## keeping raw df available
 
     if fix_cycle_numbers==True:
         limits = pd.DataFrame(limits)
@@ -55,10 +55,10 @@ def _dataread(self, filename, fix_cycle_numbers=False):
             
             
         ## Added 29/04/2026
-        df_adj = self._df.copy()
+        df_adj = df.copy() ##self._df.copy()
 
-        for cycn in np.unique(self._df["cycle number"]):
-            cycle_df = self._df.loc[self._df["cycle number"]==cycn]
+        for cycn in np.unique(df["cycle number"]):
+            cycle_df = df.loc[df["cycle number"]==cycn]
 
             ## Adjusting Q discharge/mA.h
             original_Qdischarge = cycle_df["Q discharge/mA.h"].to_numpy()
@@ -85,7 +85,9 @@ def _dataread(self, filename, fix_cycle_numbers=False):
             adjusted_capacity = original_capacity-min_capacity
             df_adj.loc[cycle_df.index, "Capacity/mA.h"] = adjusted_capacity
             
-        self._df = df_adj
+        df = df_adj
+
+    return df
     
 def _annotate_raw(self):
     raw = self._df[["time/s", "cycle number", "I/mA", "Ecell/V", "Q charge/mA.h", "Q discharge/mA.h"]]
@@ -214,23 +216,24 @@ def _proc_data(self):
     
 class ICI(object):
     """
-        Version = 04/06/2026
+        Version = 10/06/2026
     """
-    def __init__(self, filename, verbose=False, fix_cycle_numbers=False, test_var=None):
-
+    def __init__(self, filename, verbose=False, fix_cycle_numbers=False, test_var=None, load_raw_df=False):
         
-
-        self._version = "2026.06.03"
+        self._version = "2026.06.10"
         self._change_log = {"2026.03.14": "Added line in data read to ensure repeated headers are not included",
                             "2026.04.23": "Split out functions for ease of diagnostics",
                             "2026.05.17": "Added save_path",
-                            "2026.06.03": "Restructured for reloading legacy files and dealing with 'CROP_' filenames"}
+                            "2026.06.03": "Restructured for reloading legacy files and dealing with 'CROP_' filenames",
+                            "2026.06.10": "Added load_raw_df for use with concatenating files, changed previous 'strip .mpt' to [-4:] to make usable for both .mpt and .txt files"}
+
         
         self.filename_norm = os.path.normpath(filename)
         self.filepath = os.path.split(self.filename_norm)[0]
-        self.file_label = os.path.split(self.filename_norm)[-1].strip("CROP_").strip(".mpt")        
-        self.cropped_filename = os.path.join(self.filepath, "CROP_"+self.file_label+".mpt")
-        self.uncropped_filename = os.path.join(self.filepath, self.file_label+".mpt")
+        self.file_ext = self.filename_norm.split(".")[-1]
+        self.file_label = os.path.split(self.filename_norm)[-1].strip("CROP_")[:-len(self.file_ext)-1]##.strip(".mpt")        
+        self.cropped_filename = os.path.join(self.filepath, "CROP_"+self.file_label+"."+self.file_ext)
+        self.uncropped_filename = os.path.join(self.filepath, self.file_label+"."+self.file_ext)
 
         processed_fname = self.file_label+"_processed.csv"
         charge_discharge_fname = self.file_label+"_raw_chargedischarge.csv"
@@ -256,7 +259,8 @@ class ICI(object):
             if verbose==True:
                 print(f"Processed dir exists: {self.processed_dir}")
             if os.path.isfile(os.path.join(self.processed_dir, "CROP_"+processed_fname)):
-                
+                if os.path.isfile(os.path.join(self.processed_dir, processed_fname)):
+                    os.remove(os.path.join(self.processed_dir, processed_fname))
                 os.rename(os.path.join(self.processed_dir, "CROP_"+processed_fname),
                           os.path.join(self.processed_dir, processed_fname))
 
@@ -266,6 +270,8 @@ class ICI(object):
                           os.path.join(self.processed_dir, file.replace(".mpt_raw_chargedischarge", "_raw_chargedischarge")))
             
             if os.path.isfile(os.path.join(self.processed_dir, "CROP_"+charge_discharge_fname)):
+                if os.path.isfile(os.path.join(self.processed_dir, charge_discharge_fname)):
+                    os.remove(os.path.join(self.processed_dir, charge_discharge_fname))
                 os.rename(os.path.join(self.processed_dir, "CROP_"+charge_discharge_fname),
                           os.path.join(self.processed_dir, charge_discharge_fname))
 
@@ -279,11 +285,15 @@ class ICI(object):
                     self.proc = pd.read_csv(os.path.join(self.processed_dir, processed_fname), index_col=0)
                     self.raw = pd.read_csv(os.path.join(self.processed_dir, charge_discharge_fname), index_col=0)
 
+                if load_raw_df == True:
+                    self._df = _dataread(filename=self.filename, 
+                                    fix_cycle_numbers=fix_cycle_numbers) ## returns self._df
+
             ## Case 2: The files do not exist
             elif not os.path.isfile(os.path.join(self.processed_dir, processed_fname)):
                 if verbose == True:
                     print("Files do not yet exist")
-                _dataread(self, filename=self.filename, 
+                self._df = _dataread(filename=self.filename, 
                       fix_cycle_numbers=fix_cycle_numbers)
                 self.raw = _annotate_raw(self) ## returns self.raw
                 self.proc = _proc_data(self) ## returns self.proc
@@ -297,7 +307,7 @@ class ICI(object):
                 print("Processed data directory does not yet exist")
             # print(self.filename)
             # print(os.path.isfile(self.filename))
-            _dataread(self, filename=self.filename, 
+            self._df = _dataread(filename=self.filename, 
                       fix_cycle_numbers=fix_cycle_numbers)
             self.raw = _annotate_raw(self)
             self.proc = _proc_data(self)
@@ -305,7 +315,7 @@ class ICI(object):
             ## Added 04/06/2026
             os.makedirs(self.processed_dir)
             self.raw.to_csv(os.path.join(self.processed_dir, charge_discharge_fname))
-            self.proc.to_csv(os.path.join(self.processed_dir, processed_fname))
+            self.proc.to_csv(os.path.join(self.processed_dir, processed_fname))            
 
             
                         
